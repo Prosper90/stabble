@@ -2,7 +2,9 @@ import fs from "fs";
 import path from "path";
 import { Snapshot, Labels, HoldersSnapshot } from "./types";
 
-const DATA_DIR = path.join(process.cwd(), "data");
+const DATA_DIR = process.env.NETLIFY
+  ? "/tmp/stb-data"
+  : path.join(process.cwd(), "data");
 const SNAPSHOTS_FILE = path.join(DATA_DIR, "snapshots.json");
 const LABELS_FILE = path.join(DATA_DIR, "labels.json");
 const HOLDERS_FILE = path.join(DATA_DIR, "holders-history.json");
