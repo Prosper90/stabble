@@ -2,9 +2,12 @@ import fs from "fs";
 import path from "path";
 import { Snapshot, Labels, HoldersSnapshot } from "./types";
 
-const DATA_DIR = process.env.NETLIFY
-  ? "/tmp/stb-data"
-  : path.join(process.cwd(), "data");
+// On Netlify (Linux + production), cwd is read-only Lambda; /tmp is the only writable path.
+// Locally on Windows dev, use the project data/ folder as before.
+const DATA_DIR =
+  process.platform !== "win32" && process.env.NODE_ENV === "production"
+    ? "/tmp/stb-data"
+    : path.join(process.cwd(), "data");
 const SNAPSHOTS_FILE = path.join(DATA_DIR, "snapshots.json");
 const LABELS_FILE = path.join(DATA_DIR, "labels.json");
 const HOLDERS_FILE = path.join(DATA_DIR, "holders-history.json");
@@ -12,7 +15,11 @@ const HOLDERS_FILE = path.join(DATA_DIR, "holders-history.json");
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  } catch {
+    // read-only filesystem — all reads will return empty defaults, writes are no-ops
+  }
 }
 
 // ── Snapshots ──────────────────────────────────────────────────────────────
@@ -28,12 +35,14 @@ export function readSnapshots(): Snapshot[] {
 }
 
 export function saveSnapshot(snapshot: Snapshot): void {
-  ensureDataDir();
-  const existing = readSnapshots();
-  const cutoff = Date.now() - THIRTY_DAYS_MS;
-  const pruned = existing.filter((s) => s.timestamp > cutoff);
-  pruned.push(snapshot);
-  fs.writeFileSync(SNAPSHOTS_FILE, JSON.stringify(pruned), "utf-8");
+  try {
+    ensureDataDir();
+    const existing = readSnapshots();
+    const cutoff = Date.now() - THIRTY_DAYS_MS;
+    const pruned = existing.filter((s) => s.timestamp > cutoff);
+    pruned.push(snapshot);
+    fs.writeFileSync(SNAPSHOTS_FILE, JSON.stringify(pruned), "utf-8");
+  } catch { /* ephemeral filesystem — skip persistence */ }
 }
 
 export function getLatestSnapshot(): Snapshot | null {
@@ -63,14 +72,16 @@ export function readLabels(): Labels {
 }
 
 export function saveLabel(address: string, name: string): void {
-  ensureDataDir();
-  const labels = readLabels();
-  if (name.trim() === "") {
-    delete labels[address];
-  } else {
-    labels[address] = name.trim();
-  }
-  fs.writeFileSync(LABELS_FILE, JSON.stringify(labels, null, 2), "utf-8");
+  try {
+    ensureDataDir();
+    const labels = readLabels();
+    if (name.trim() === "") {
+      delete labels[address];
+    } else {
+      labels[address] = name.trim();
+    }
+    fs.writeFileSync(LABELS_FILE, JSON.stringify(labels, null, 2), "utf-8");
+  } catch { /* ephemeral filesystem — skip persistence */ }
 }
 
 // ── Holders History ─────────────────────────────────────────────────────────
@@ -86,12 +97,14 @@ export function readHoldersHistory(): HoldersSnapshot[] {
 }
 
 export function saveHoldersSnapshot(snapshot: HoldersSnapshot): void {
-  ensureDataDir();
-  const existing = readHoldersHistory();
-  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-  const pruned = existing.filter((s) => s.timestamp > cutoff);
-  pruned.push(snapshot);
-  fs.writeFileSync(HOLDERS_FILE, JSON.stringify(pruned), "utf-8");
+  try {
+    ensureDataDir();
+    const existing = readHoldersHistory();
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const pruned = existing.filter((s) => s.timestamp > cutoff);
+    pruned.push(snapshot);
+    fs.writeFileSync(HOLDERS_FILE, JSON.stringify(pruned), "utf-8");
+  } catch { /* ephemeral filesystem — skip persistence */ }
 }
 
 export function getLatestHoldersSnapshot(): HoldersSnapshot | null {
