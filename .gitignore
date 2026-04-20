@@ -39,3 +39,14 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# runtime data
+data/
+
+# Local Netlify folder
+.netlify
+
+# Docs / internal notes
+*.md
+AGENTS.md
+CLAUDE.md

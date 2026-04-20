@@ -1,0 +1,8 @@
+[build]
+  command = "npm run build"
+
+[functions."___netlify-server-handler"]
+  timeout = 26
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
