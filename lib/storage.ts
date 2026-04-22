@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { Snapshot, Labels, HoldersSnapshot } from "./types";
+import { Snapshot, Labels, HoldersSnapshot, PositionsSnapshot } from "./types";
 
 // On Netlify (Linux + production), cwd is read-only Lambda; /tmp is the only writable path.
 // Locally on Windows dev, use the project data/ folder as before.
@@ -11,6 +11,7 @@ const DATA_DIR =
 const SNAPSHOTS_FILE = path.join(DATA_DIR, "snapshots.json");
 const LABELS_FILE = path.join(DATA_DIR, "labels.json");
 const HOLDERS_FILE = path.join(DATA_DIR, "holders-history.json");
+const POSITIONS_FILE = path.join(DATA_DIR, "positions-history.json");
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -115,6 +116,43 @@ export function getLatestHoldersSnapshot(): HoldersSnapshot | null {
 
 export function getHoldersSnapshotNearest(targetMs: number): HoldersSnapshot | null {
   const history = readHoldersHistory();
+  if (history.length === 0) return null;
+  return history.reduce((best, s) =>
+    Math.abs(s.timestamp - targetMs) < Math.abs(best.timestamp - targetMs) ? s : best
+  );
+}
+
+// ── Positions History ────────────────────────────────────────────────────────
+
+export function readPositionsHistory(): PositionsSnapshot[] {
+  try {
+    ensureDataDir();
+    if (!fs.existsSync(POSITIONS_FILE)) return [];
+    return JSON.parse(fs.readFileSync(POSITIONS_FILE, "utf-8")) as PositionsSnapshot[];
+  } catch {
+    return [];
+  }
+}
+
+export function savePositionsSnapshot(snapshot: PositionsSnapshot): void {
+  try {
+    ensureDataDir();
+    const existing = readPositionsHistory();
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const pruned = existing.filter((s) => s.timestamp > cutoff);
+    pruned.push(snapshot);
+    fs.writeFileSync(POSITIONS_FILE, JSON.stringify(pruned), "utf-8");
+  } catch { /* ephemeral filesystem — skip persistence */ }
+}
+
+export function getLatestPositionsSnapshot(): PositionsSnapshot | null {
+  const history = readPositionsHistory();
+  if (history.length === 0) return null;
+  return history.reduce((best, s) => (s.timestamp > best.timestamp ? s : best));
+}
+
+export function getPositionsSnapshotNearest(targetMs: number): PositionsSnapshot | null {
+  const history = readPositionsHistory();
   if (history.length === 0) return null;
   return history.reduce((best, s) =>
     Math.abs(s.timestamp - targetMs) < Math.abs(best.timestamp - targetMs) ? s : best

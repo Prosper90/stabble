@@ -27,6 +27,20 @@ export interface Snapshot {
 
 export type Labels = Record<string, string>;
 
+export interface PositionEntry {
+  address: string;         // owner wallet address
+  stakedAmount: number;
+  lockedAmount: number;
+  totalAmount: number;
+  unlocksAt?: number;      // unix seconds, from locker
+  categories: ('staker' | 'locker')[];
+}
+
+export interface PositionsSnapshot {
+  timestamp: number;
+  entries: PositionEntry[];
+}
+
 export interface HolderEntry {
   address: string;         // wallet address
   walletBalance: number;   // tokens sitting in wallet

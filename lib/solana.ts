@@ -8,7 +8,7 @@ import {
   RewarderContext,
   Pool,
 } from "@stabbleorg/rewarder-sdk";
-import { TreasuryBalance, LockerEntry, Snapshot, HolderEntry, HoldersSnapshot } from "./types";
+import { TreasuryBalance, LockerEntry, Snapshot, HolderEntry, HoldersSnapshot, PositionEntry, PositionsSnapshot } from "./types";
 
 export const STB_MINT = "STBuyENwJ1GP4yNZCjwavn92wYLEY3t5S1kVS5kwyS1";
 const STB_DECIMALS = 9;
@@ -113,6 +113,54 @@ async function fetchWalletHolders(connection: Connection): Promise<Map<string, n
     }
   }
   return result;
+}
+
+export async function fetchPositions(): Promise<PositionsSnapshot> {
+  const connection = new Connection(RPC_URL, "confirmed");
+  const { governo, context: governoContext } = await loadGoverno(connection);
+
+  const [lockerEntries, stakerMap] = await Promise.all([
+    fetchLockers(connection, governo, governoContext),
+    fetchStakerMap(connection, governo.rewarderAddress),
+  ]);
+
+  const byWallet = new Map<string, PositionEntry>();
+
+  for (const [address, stakedAmount] of stakerMap) {
+    byWallet.set(address, {
+      address,
+      stakedAmount,
+      lockedAmount: 0,
+      totalAmount: stakedAmount,
+      categories: ["staker"],
+    });
+  }
+
+  for (const locker of lockerEntries) {
+    if (!locker.ownerAddress) continue;
+    const existing = byWallet.get(locker.ownerAddress);
+    if (existing) {
+      existing.lockedAmount += locker.lockedAmount;
+      existing.totalAmount += locker.lockedAmount;
+      existing.unlocksAt = locker.unlocksAt;
+      if (!existing.categories.includes("locker")) existing.categories.push("locker");
+    } else {
+      byWallet.set(locker.ownerAddress, {
+        address: locker.ownerAddress,
+        stakedAmount: 0,
+        lockedAmount: locker.lockedAmount,
+        totalAmount: locker.lockedAmount,
+        unlocksAt: locker.unlocksAt,
+        categories: ["locker"],
+      });
+    }
+  }
+
+  const entries = Array.from(byWallet.values()).sort(
+    (a, b) => b.totalAmount - a.totalAmount
+  );
+
+  return { timestamp: Date.now(), entries };
 }
 
 async function fetchStakerMap(
