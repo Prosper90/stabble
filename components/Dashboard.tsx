@@ -258,7 +258,6 @@ export default function Dashboard() {
         <StatCard
           title="Circulating"
           value={circulating !== null ? fmtN(circulating) : "—"}
-          sub={snapshot.totalSupply > 0 ? `Supply: ${fmtN(snapshot.totalSupply)}` : undefined}
         />
       </div>
 
