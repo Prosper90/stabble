@@ -49,20 +49,32 @@ export default function WalletLabelCell({ address, label, onSave }: WalletLabelC
   }
 
   return (
-    <button
-      onClick={() => { setDraft(label ?? ""); setEditing(true); }}
-      className="group text-left w-full"
-      title={address}
-    >
-      {label ? (
-        <span className="text-[#2dd4bf] font-medium">{label}</span>
-      ) : (
-        <span className="text-[#6e7681]">Unknown</span>
-      )}
-      <span className="ml-1.5 text-[#30363d] group-hover:text-[#8b949e] text-xs transition-colors">
-        {shortAddr(address)}
-      </span>
-      <span className="ml-1 opacity-0 group-hover:opacity-100 text-[#8b949e] text-xs transition-opacity">✎</span>
-    </button>
+    <div className="flex items-center gap-1.5 group">
+      <button
+        onClick={() => { setDraft(label ?? ""); setEditing(true); }}
+        className="text-left"
+        title={address}
+      >
+        {label ? (
+          <span className="text-[#2dd4bf] font-medium">{label}</span>
+        ) : (
+          <span className="text-[#6e7681]">Unknown</span>
+        )}
+        <span className="ml-1.5 text-[#30363d] group-hover:text-[#8b949e] text-xs transition-colors">
+          {shortAddr(address)}
+        </span>
+        <span className="ml-1 opacity-0 group-hover:opacity-100 text-[#8b949e] text-xs transition-opacity">✎</span>
+      </button>
+      <a
+        href={`https://solscan.io/account/${address}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        title="View on Solscan"
+        className="opacity-0 group-hover:opacity-100 transition-opacity text-[#8b949e] hover:text-[#58a6ff] text-xs"
+        onClick={(e) => e.stopPropagation()}
+      >
+        ↗
+      </a>
+    </div>
   );
 }

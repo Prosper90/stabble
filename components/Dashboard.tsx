@@ -126,7 +126,6 @@ export default function Dashboard() {
 
   const d1TotalLocked = snap1d ? snapshot.totalLocked - snap1d.totalLocked : null;
   const d1TotalStaked = snap1d ? snapshot.totalStaked - snap1d.totalStaked : null;
-  const d1TotalControl = snap1d ? snapshot.totalInControl - snap1d.totalInControl : null;
   const grandTotal = snapshot.totalInControl + snapshot.totalLocked + snapshot.totalStaked;
   const circulating = snapshot.totalSupply > 0 ? snapshot.totalSupply - grandTotal : null;
 
@@ -253,7 +252,7 @@ export default function Dashboard() {
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Total in Control" value={fmtN(snapshot.totalInControl)} delta={d1TotalControl} />
+        <StatCard title="Supply" value={snapshot.totalSupply > 0 ? fmtN(snapshot.totalSupply) : "—"} />
         <StatCard title="Total Locked" value={fmtN(snapshot.totalLocked)} delta={d1TotalLocked} />
         <StatCard title="Total Staked" value={fmtN(snapshot.totalStaked)} delta={d1TotalStaked} />
         <StatCard
