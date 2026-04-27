@@ -5,6 +5,7 @@ import {
   GovernoContext,
   Governo,
   Locker,
+  Miner,
   RewarderContext,
   Pool,
 } from "@stabbleorg/rewarder-sdk";
@@ -70,7 +71,13 @@ async function fetchLockers(
   governo: Governo,
   context: GovernoContext
 ): Promise<LockerEntry[]> {
-  const lockers: Locker[] = await context.loadLockers(governo);
+  // loadLockers() defaults authorityAddress to the dummy wallet — query all directly
+  const accounts = await context.program.account.locker.all([
+    { memcmp: { offset: 8, bytes: governo.address.toBase58() } },
+  ]);
+  const lockers = accounts.map(
+    ({ publicKey, account }) => new Locker(governo, publicKey, account as never)
+  );
   return lockers.map((locker): LockerEntry => ({
     address: locker.address.toBase58(),
     ownerAddress: locker.ownerAddress.toBase58(),
@@ -179,7 +186,12 @@ async function fetchStakerMap(
   if (stbPools.length === 0) return new Map();
 
   const poolsMap = new Map(stbPools.map((p) => [p.address.toBase58(), p]));
-  const miners = await rewarderContext.loadMiners(poolsMap);
+
+  // loadMiners() defaults beneficiaryAddress to the dummy wallet — query all directly
+  const allMinerAccounts = await rewarderContext.program.account.miner.all();
+  const miners = allMinerAccounts
+    .filter(({ account }) => poolsMap.has((account.pool as PublicKey).toBase58()))
+    .map(({ account }) => new Miner(poolsMap.get((account.pool as PublicKey).toBase58())!, account as never));
 
   const result = new Map<string, number>();
   for (const miner of miners) {

@@ -52,6 +52,7 @@ export default function Dashboard() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [snap1d, setSnap1d] = useState<Ref | null>(null);
   const [snap7d, setSnap7d] = useState<Ref | null>(null);
+  const [visibleLockers, setVisibleLockers] = useState(5);
 
   const load = useCallback(async (force = false) => {
     force ? setRefreshing(true) : setLoading(true);
@@ -269,10 +270,26 @@ export default function Dashboard() {
         </h2>
         <SortableTable
           columns={lockerCols}
-          data={lockerRows}
+          data={lockerRows.slice(0, visibleLockers)}
           rowKey={(r) => r.address}
           emptyMessage="No lockers found"
         />
+        {visibleLockers < lockerRows.length && (
+          <div className="flex gap-3 mt-3">
+            <button
+              onClick={() => setVisibleLockers((n) => n + 5)}
+              className="px-4 py-2 bg-[#21262d] text-[#8b949e] rounded-lg text-sm hover:bg-[#30363d] hover:text-[#e6edf3] transition-colors border border-[#30363d]"
+            >
+              Load more ({Math.min(5, lockerRows.length - visibleLockers)} of {lockerRows.length - visibleLockers} remaining)
+            </button>
+            <button
+              onClick={() => setVisibleLockers(lockerRows.length)}
+              className="px-4 py-2 bg-[#21262d] text-[#8b949e] rounded-lg text-sm hover:bg-[#30363d] hover:text-[#e6edf3] transition-colors border border-[#30363d]"
+            >
+              Load all ({lockerRows.length})
+            </button>
+          </div>
+        )}
       </section>
 
       {/* Treasury table */}
