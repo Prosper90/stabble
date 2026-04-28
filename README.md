@@ -1,36 +1,57 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# STB Tracker
 
-## Getting Started
+A real-time on-chain analytics dashboard for the **Stabble (STB)** token on Solana. Tracks token distribution, staking positions, vote-locked positions, large holders, and liquidity pool composition — with historical time-series snapshots for delta analysis.
 
-First, run the development server:
+## Pages
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+| Route | Description |
+|---|---|
+| `/` | Main dashboard — total supply, locked/staked totals, vote-locked positions table, treasury wallets |
+| `/positions` | All wallets with active STB staking or vote-lock positions, with 1d/7d deltas |
+| `/holders` | All wallets holding ≥ 100,000 STB (across wallet balance, staked, and locked), sortable |
+| `/analytics` | Historical trends — circulating supply %, locker count, and aggregate deltas over time |
+| `/pool` | Stabble liquidity pool tracker — per-asset vault balances with 1d/7d/30d deltas |
+
+## Stack
+
+- **Next.js** (App Router) + **TypeScript** + **Tailwind CSS**
+- **@solana/web3.js** + **@solana/spl-token** — on-chain RPC queries
+- **@coral-xyz/anchor** + **@stabbleorg/rewarder-sdk** — Governo (vote-lock) and Rewarder (staking) program interactions
+- **Netlify** — deployment target
+
+## How it works
+
+All data is fetched server-side from Solana mainnet via a paid Helius RPC endpoint. API routes cache responses for 5 minutes; a `?force=true` query parameter bypasses the cache. Each successful fetch is persisted as a JSON snapshot in `data/` (or `/tmp/stb-data` on Netlify's read-only filesystem), keeping the last 30 days of history for delta calculations.
+
+### Key data sources
+
+- **Vote-locked positions** — fetched directly from the Governo program (`locker` accounts filtered by the STB Governo address)
+- **Staking positions** — fetched from the Rewarder program (`miner` accounts filtered by STB staking pools)
+- **Token holders** — `getProgramAccounts` on the SPL Token program filtered by the STB mint
+- **Treasury wallets** — hardcoded known addresses queried for their STB ATA balance
+- **Pool vaults** — SPL token accounts (vault addresses configured via env vars)
+
+## Environment variables
+
+```
+RPC_URL=<helius-or-other-paid-rpc-endpoint>
+
+# Pool tracker — fill in once the Stabble pool is live
+POOL_ADDRESS=<pool on-chain address>
+POOL_VAULTS=<comma-separated vault token account addresses>
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Running locally
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm install
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Open [http://localhost:3000](http://localhost:3000).
 
-## Learn More
+On first load the holders and positions pages take 30–60 seconds while the RPC fetches all program accounts. Subsequent loads are served from the 5-minute cache.
 
-To learn more about Next.js, take a look at the following resources:
+## Deployment
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Deployed on Netlify. The `netlify.toml` sets a 26-second server function timeout and uses `@netlify/plugin-nextjs` for Next.js compatibility. Persistent data is written to `/tmp/stb-data` on Netlify (ephemeral between deploys — history resets on each deploy).

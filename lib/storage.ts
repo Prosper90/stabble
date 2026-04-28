@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { Snapshot, Labels, HoldersSnapshot, PositionsSnapshot } from "./types";
+import { Snapshot, Labels, HoldersSnapshot, PositionsSnapshot, PoolSnapshot } from "./types";
 
 // On Netlify (Linux + production), cwd is read-only Lambda; /tmp is the only writable path.
 // Locally on Windows dev, use the project data/ folder as before.
@@ -12,6 +12,7 @@ const SNAPSHOTS_FILE = path.join(DATA_DIR, "snapshots.json");
 const LABELS_FILE = path.join(DATA_DIR, "labels.json");
 const HOLDERS_FILE = path.join(DATA_DIR, "holders-history.json");
 const POSITIONS_FILE = path.join(DATA_DIR, "positions-history.json");
+const POOL_FILE = path.join(DATA_DIR, "pool-history.json");
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -153,6 +154,43 @@ export function getLatestPositionsSnapshot(): PositionsSnapshot | null {
 
 export function getPositionsSnapshotNearest(targetMs: number): PositionsSnapshot | null {
   const history = readPositionsHistory();
+  if (history.length === 0) return null;
+  return history.reduce((best, s) =>
+    Math.abs(s.timestamp - targetMs) < Math.abs(best.timestamp - targetMs) ? s : best
+  );
+}
+
+// ── Pool History ─────────────────────────────────────────────────────────────
+
+export function readPoolHistory(): PoolSnapshot[] {
+  try {
+    ensureDataDir();
+    if (!fs.existsSync(POOL_FILE)) return [];
+    return JSON.parse(fs.readFileSync(POOL_FILE, "utf-8")) as PoolSnapshot[];
+  } catch {
+    return [];
+  }
+}
+
+export function savePoolSnapshot(snapshot: PoolSnapshot): void {
+  try {
+    ensureDataDir();
+    const existing = readPoolHistory();
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const pruned = existing.filter((s) => s.timestamp > cutoff);
+    pruned.push(snapshot);
+    fs.writeFileSync(POOL_FILE, JSON.stringify(pruned), "utf-8");
+  } catch { /* ephemeral filesystem — skip persistence */ }
+}
+
+export function getLatestPoolSnapshot(): PoolSnapshot | null {
+  const history = readPoolHistory();
+  if (history.length === 0) return null;
+  return history.reduce((best, s) => (s.timestamp > best.timestamp ? s : best));
+}
+
+export function getPoolSnapshotNearest(targetMs: number): PoolSnapshot | null {
+  const history = readPoolHistory();
   if (history.length === 0) return null;
   return history.reduce((best, s) =>
     Math.abs(s.timestamp - targetMs) < Math.abs(best.timestamp - targetMs) ? s : best

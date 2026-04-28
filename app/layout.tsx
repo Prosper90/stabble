@@ -21,6 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/positions" className="text-xs text-[#8b949e] hover:text-[#e6edf3] transition-colors">Stakers & Lockers</Link>
               <Link href="/holders" className="text-xs text-[#8b949e] hover:text-[#e6edf3] transition-colors">Holders</Link>
               <Link href="/analytics" className="text-xs text-[#8b949e] hover:text-[#e6edf3] transition-colors">Analytics</Link>
+              <Link href="/pool" className="text-xs text-[#8b949e] hover:text-[#e6edf3] transition-colors">Pool</Link>
             </nav>
           </div>
         </header>

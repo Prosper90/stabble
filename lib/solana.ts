@@ -9,7 +9,7 @@ import {
   RewarderContext,
   Pool,
 } from "@stabbleorg/rewarder-sdk";
-import { TreasuryBalance, LockerEntry, Snapshot, HolderEntry, HoldersSnapshot, PositionEntry, PositionsSnapshot } from "./types";
+import { TreasuryBalance, LockerEntry, Snapshot, HolderEntry, HoldersSnapshot, PositionEntry, PositionsSnapshot, PoolAsset, PoolSnapshot } from "./types";
 
 export const STB_MINT = "STBuyENwJ1GP4yNZCjwavn92wYLEY3t5S1kVS5kwyS1";
 const STB_DECIMALS = 9;
@@ -274,4 +274,38 @@ export async function fetchSnapshot(): Promise<Snapshot> {
     totalInControl,
     totalSupply,
   };
+}
+
+export async function fetchPool(): Promise<PoolSnapshot> {
+  const poolAddress = process.env.POOL_ADDRESS ?? "";
+  const vaultList = (process.env.POOL_VAULTS ?? "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+
+  if (!poolAddress || vaultList.length === 0) {
+    return { timestamp: Date.now(), poolAddress, assets: [] };
+  }
+
+  const connection = new Connection(RPC_URL, "confirmed");
+  const assets: PoolAsset[] = [];
+
+  for (const vaultAddr of vaultList) {
+    try {
+      const vaultPubkey = new PublicKey(vaultAddr);
+      const tokenAccount = await getAccount(connection, vaultPubkey);
+      const mint = await getMint(connection, tokenAccount.mint);
+      const amount = Number(tokenAccount.amount) / 10 ** mint.decimals;
+      assets.push({
+        vault: vaultAddr,
+        mint: tokenAccount.mint.toBase58(),
+        amount,
+        decimals: mint.decimals,
+      });
+    } catch {
+      // vault unreachable — skip silently
+    }
+  }
+
+  return { timestamp: Date.now(), poolAddress, assets };
 }

@@ -55,3 +55,16 @@ export interface HoldersSnapshot {
   holders: HolderEntry[];
   minBalance: number;
 }
+
+export interface PoolAsset {
+  vault: string;    // vault token account address
+  mint: string;     // token mint address
+  amount: number;   // UI amount (divided by decimals)
+  decimals: number;
+}
+
+export interface PoolSnapshot {
+  timestamp: number;
+  poolAddress: string;
+  assets: PoolAsset[];
+}
