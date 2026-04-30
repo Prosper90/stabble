@@ -276,24 +276,62 @@ export async function fetchSnapshot(): Promise<Snapshot> {
   };
 }
 
-export async function fetchPool(): Promise<PoolSnapshot> {
-  const poolAddress = process.env.POOL_ADDRESS ?? "";
-  const vaultList = (process.env.POOL_VAULTS ?? "")
-    .split(",")
-    .map((v) => v.trim())
-    .filter(Boolean);
+async function discoverPoolVaults(connection: Connection, poolAddress: string): Promise<string[]> {
+  const sigs = await connection.getSignaturesForAddress(new PublicKey(poolAddress), { limit: 10 });
+  if (sigs.length === 0) return [];
 
-  if (!poolAddress || vaultList.length === 0) {
-    return { timestamp: Date.now(), poolAddress, assets: [] };
+  // Count how many transactions each token account appears in (deduplicated per tx).
+  // Pool vaults appear in every swap; user wallets appear in only 1-2 transactions.
+  const txFreq = new Map<string, number>();
+  const toProcess = sigs.slice(0, 8);
+
+  for (const { signature } of toProcess) {
+    try {
+      const tx = await connection.getParsedTransaction(signature, {
+        maxSupportedTransactionVersion: 0,
+        commitment: "confirmed",
+      });
+      const keys = tx?.transaction.message.accountKeys ?? [];
+      const balances = [
+        ...(tx?.meta?.preTokenBalances ?? []),
+        ...(tx?.meta?.postTokenBalances ?? []),
+      ];
+      const seenInTx = new Set<string>();
+      for (const b of balances) {
+        const addr = keys[b.accountIndex]?.pubkey.toBase58();
+        if (addr && !seenInTx.has(addr)) {
+          seenInTx.add(addr);
+          txFreq.set(addr, (txFreq.get(addr) ?? 0) + 1);
+        }
+      }
+    } catch {
+      // skip failed tx fetch
+    }
   }
 
-  const connection = new Connection(RPC_URL, "confirmed");
-  const assets: PoolAsset[] = [];
+  // Require account to appear in at least 60% of processed transactions.
+  // This excludes user wallets (sporadic) while keeping pool vaults (present in all swaps).
+  const threshold = Math.max(2, Math.ceil(toProcess.length * 0.6));
+  return [...txFreq.entries()]
+    .filter(([, count]) => count >= threshold)
+    .map(([addr]) => addr);
+}
 
-  for (const vaultAddr of vaultList) {
+export async function fetchPool(poolAddress?: string): Promise<PoolSnapshot> {
+  const addr = (poolAddress ?? process.env.POOL_ADDRESS ?? "").trim();
+  if (!addr) return { timestamp: Date.now(), poolAddress: "", assets: [] };
+
+  const connection = new Connection(RPC_URL, "confirmed");
+
+  const vaultAddresses = await discoverPoolVaults(connection, addr);
+  if (vaultAddresses.length === 0) {
+    return { timestamp: Date.now(), poolAddress: addr, assets: [] };
+  }
+
+  const assets: PoolAsset[] = [];
+  for (const vaultAddr of vaultAddresses) {
     try {
-      const vaultPubkey = new PublicKey(vaultAddr);
-      const tokenAccount = await getAccount(connection, vaultPubkey);
+      const tokenAccount = await getAccount(connection, new PublicKey(vaultAddr));
       const mint = await getMint(connection, tokenAccount.mint);
       const amount = Number(tokenAccount.amount) / 10 ** mint.decimals;
       assets.push({
@@ -307,5 +345,5 @@ export async function fetchPool(): Promise<PoolSnapshot> {
     }
   }
 
-  return { timestamp: Date.now(), poolAddress, assets };
+  return { timestamp: Date.now(), poolAddress: addr, assets };
 }

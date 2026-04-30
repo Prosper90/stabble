@@ -161,36 +161,45 @@ export function getPositionsSnapshotNearest(targetMs: number): PositionsSnapshot
 }
 
 // ── Pool History ─────────────────────────────────────────────────────────────
+// Stored as a map keyed by pool address so multiple pools stay separate.
 
-export function readPoolHistory(): PoolSnapshot[] {
+type PoolHistoryMap = Record<string, PoolSnapshot[]>;
+
+function readPoolHistoryMap(): PoolHistoryMap {
   try {
     ensureDataDir();
-    if (!fs.existsSync(POOL_FILE)) return [];
-    return JSON.parse(fs.readFileSync(POOL_FILE, "utf-8")) as PoolSnapshot[];
+    if (!fs.existsSync(POOL_FILE)) return {};
+    return JSON.parse(fs.readFileSync(POOL_FILE, "utf-8")) as PoolHistoryMap;
   } catch {
-    return [];
+    return {};
   }
+}
+
+export function readPoolHistory(poolAddress: string): PoolSnapshot[] {
+  return readPoolHistoryMap()[poolAddress] ?? [];
 }
 
 export function savePoolSnapshot(snapshot: PoolSnapshot): void {
   try {
     ensureDataDir();
-    const existing = readPoolHistory();
-    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const map = readPoolHistoryMap();
+    const existing = map[snapshot.poolAddress] ?? [];
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000; // 24-hour rolling window
     const pruned = existing.filter((s) => s.timestamp > cutoff);
     pruned.push(snapshot);
-    fs.writeFileSync(POOL_FILE, JSON.stringify(pruned), "utf-8");
+    map[snapshot.poolAddress] = pruned;
+    fs.writeFileSync(POOL_FILE, JSON.stringify(map), "utf-8");
   } catch { /* ephemeral filesystem — skip persistence */ }
 }
 
-export function getLatestPoolSnapshot(): PoolSnapshot | null {
-  const history = readPoolHistory();
+export function getLatestPoolSnapshot(poolAddress: string): PoolSnapshot | null {
+  const history = readPoolHistory(poolAddress);
   if (history.length === 0) return null;
   return history.reduce((best, s) => (s.timestamp > best.timestamp ? s : best));
 }
 
-export function getPoolSnapshotNearest(targetMs: number): PoolSnapshot | null {
-  const history = readPoolHistory();
+export function getPoolSnapshotNearest(poolAddress: string, targetMs: number): PoolSnapshot | null {
+  const history = readPoolHistory(poolAddress);
   if (history.length === 0) return null;
   return history.reduce((best, s) =>
     Math.abs(s.timestamp - targetMs) < Math.abs(best.timestamp - targetMs) ? s : best
