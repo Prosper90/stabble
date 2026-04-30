@@ -112,7 +112,7 @@ export default function AdminPage() {
                 )}
               </div>
 
-              {expanded === key && entry.data && (
+              {expanded === key && entry.data != null && (
                 <div className="border-t border-[#30363d] bg-[#0d1117] p-4 overflow-auto max-h-[500px]">
                   <pre className="text-xs text-[#e6edf3] font-mono whitespace-pre-wrap">
                     {JSON.stringify(entry.data, null, 2)}
