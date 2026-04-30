@@ -37,7 +37,7 @@ export default function AdminPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/data");
+      const res = await fetch("/api/admin-data");
       if (!res.ok) throw new Error(await res.text());
       setData(await res.json());
     } catch (e) {
