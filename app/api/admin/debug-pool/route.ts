@@ -13,7 +13,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ address, sigCount: 0, message: "No transactions found for this address" });
   }
 
-  const txDetails = [];
+  type TxResult =
+    | { signature: string; accounts: string[]; tokenAccountOwners: { phase: string; accountIndex: number; account: string; mint: string; owner: string | undefined; amount: string | undefined | null }[] }
+    | { signature: string; error: string };
+  const txDetails: TxResult[] = [];
 
   for (const { signature } of sigs.slice(0, 5)) {
     try {
