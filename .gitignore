@@ -50,3 +50,4 @@ data/
 *.md
 AGENTS.md
 CLAUDE.md
+client_asking/
