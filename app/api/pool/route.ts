@@ -29,7 +29,14 @@ export async function GET(req: NextRequest) {
 
   try {
     const snapshot = await fetchPool(address);
-    if (snapshot.assets.length > 0) savePoolSnapshot(snapshot);
+    if (snapshot.assets.length > 0) {
+      savePoolSnapshot(snapshot);
+      // Register with backend tracker (fire-and-forget)
+      const backendUrl = process.env.BACKEND_URL;
+      if (backendUrl) {
+        fetch(`${backendUrl}/api/pools/${address}`, { method: "POST" }).catch(() => {});
+      }
+    }
     const snap1d  = getPoolSnapshotNearest(address, snapshot.timestamp - DAY_MS);
     const snap7d  = getPoolSnapshotNearest(address, snapshot.timestamp - 7 * DAY_MS);
     const snap30d = getPoolSnapshotNearest(address, snapshot.timestamp - 30 * DAY_MS);
