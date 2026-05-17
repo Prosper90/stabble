@@ -57,10 +57,12 @@ export interface HoldersSnapshot {
 }
 
 export interface PoolAsset {
-  vault: string;    // vault token account address
-  mint: string;     // token mint address
-  amount: number;   // UI amount (divided by decimals)
+  vault: string;
+  mint: string;
+  amount: number;
   decimals: number;
+  symbol?: string;    // token symbol e.g. "ORCA"
+  usdPrice?: number;  // current price in USD
 }
 
 export interface PoolSnapshot {

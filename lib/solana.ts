@@ -345,5 +345,13 @@ export async function fetchPool(poolAddress?: string): Promise<PoolSnapshot> {
     }
   }
 
-  return { timestamp: Date.now(), poolAddress: addr, assets };
+  // Deduplicate by mint — some pools have multiple vaults for the same token
+  const byMint = new Map<string, PoolAsset>();
+  for (const asset of assets) {
+    const existing = byMint.get(asset.mint);
+    if (existing) existing.amount += asset.amount;
+    else byMint.set(asset.mint, { ...asset });
+  }
+
+  return { timestamp: Date.now(), poolAddress: addr, assets: Array.from(byMint.values()) };
 }

@@ -12,8 +12,10 @@ type DeltaRange = "1d" | "7d" | "30d";
 interface AssetRow {
   vault: string;
   mint: string;
+  symbol: string;
   amount: number;
   decimals: number;
+  usdValue: number | null;
   delta1d: number | null;
   delta7d: number | null;
   delta30d: number | null;
@@ -23,6 +25,10 @@ type RefSnap = { assets: { mint: string; amount: number }[] } | null;
 
 function fmtN(n: number) {
   return n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+}
+
+function fmtUsd(n: number) {
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 }
 
 function shortAddr(addr: string) {
@@ -74,9 +80,8 @@ export default function PoolDashboard({ defaultPool = "" }: Props) {
       if (apiErr) throw new Error(apiErr);
       if (warning) console.warn("Pool warning:", warning);
 
-      const lbls = await labelsRes.json();
       setSnapshot(snap);
-      setLabels(lbls);
+      setLabels(await labelsRes.json());
       setSnap1d(s1d ?? null);
       setSnap7d(s7d ?? null);
       setSnap30d(s30d ?? null);
@@ -92,7 +97,6 @@ export default function PoolDashboard({ defaultPool = "" }: Props) {
     }
   }, []);
 
-  // Auto-load default pool on mount
   useEffect(() => {
     if (defaultPool) loadPool(defaultPool);
   }, [defaultPool, loadPool]);
@@ -117,23 +121,30 @@ export default function PoolDashboard({ defaultPool = "" }: Props) {
   }
 
   const activeRef = deltaRange === "1d" ? snap1d : deltaRange === "7d" ? snap7d : snap30d;
+  const deltas = buildDeltaMap(snapshot?.assets ?? [], activeRef);
 
   const rows: AssetRow[] = (snapshot?.assets ?? []).map((a) => ({
-    ...a,
+    vault: a.vault,
+    mint: a.mint,
+    symbol: labels[a.mint] ?? a.symbol ?? shortAddr(a.mint),
+    amount: a.amount,
+    decimals: a.decimals,
+    usdValue: a.usdPrice != null ? a.amount * a.usdPrice : null,
     delta1d:  buildDeltaMap(snapshot!.assets, snap1d).get(a.mint)  ?? null,
     delta7d:  buildDeltaMap(snapshot!.assets, snap7d).get(a.mint)  ?? null,
     delta30d: buildDeltaMap(snapshot!.assets, snap30d).get(a.mint) ?? null,
   }));
 
-  const deltas = buildDeltaMap(snapshot?.assets ?? [], activeRef);
-
   const columns: Column<AssetRow>[] = [
     {
-      key: "mint",
+      key: "symbol",
       header: "Token",
       sortable: false,
       render: (row) => (
-        <WalletLabelCell address={row.mint} label={labels[row.mint]} onSave={saveLabel} />
+        <div className="flex flex-col gap-0.5">
+          <span className="font-medium text-[#e6edf3]">{row.symbol}</span>
+          <WalletLabelCell address={row.mint} label={labels[row.mint]} onSave={saveLabel} />
+        </div>
       ),
     },
     {
@@ -157,6 +168,19 @@ export default function PoolDashboard({ defaultPool = "" }: Props) {
       sortable: true,
       align: "right",
       render: (row) => fmtN(row.amount),
+    },
+    {
+      key: "usdValue",
+      header: "Value (USD)",
+      sortable: true,
+      align: "right",
+      value: (row) => row.usdValue,
+      render: (row) =>
+        row.usdValue != null ? (
+          <span className="text-[#e6edf3]">{fmtUsd(row.usdValue)}</span>
+        ) : (
+          <span className="text-[#6e7681]">—</span>
+        ),
     },
     {
       key: "delta1d",
@@ -244,7 +268,6 @@ export default function PoolDashboard({ defaultPool = "" }: Props) {
         </div>
       )}
 
-      {/* Empty / not-yet-searched state */}
       {!loading && !snapshot && !error && (
         <div className="border border-[#30363d] rounded-lg p-8 text-center space-y-2">
           <p className="text-[#8b949e] text-sm">
@@ -256,7 +279,6 @@ export default function PoolDashboard({ defaultPool = "" }: Props) {
         </div>
       )}
 
-      {/* No assets found (pool exists but no transactions yet) */}
       {!loading && snapshot && snapshot.assets.length === 0 && (
         <div className="border border-[#30363d] rounded-lg p-8 text-center space-y-2">
           <p className="text-[#e6edf3] font-medium">No vault data found for this pool</p>
@@ -266,16 +288,23 @@ export default function PoolDashboard({ defaultPool = "" }: Props) {
         </div>
       )}
 
-      {/* Results */}
       {snapshot && snapshot.assets.length > 0 && (
         <>
           {/* Stat cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {snapshot.assets.map((a) => {
-              const label = labels[a.mint] ?? shortAddr(a.mint);
+              const symbol = labels[a.mint] ?? a.symbol ?? shortAddr(a.mint);
               const delta = deltas.get(a.mint) ?? null;
+              const usdValue = a.usdPrice != null ? a.amount * a.usdPrice : null;
               return (
-                <StatCard key={a.mint} title={label} value={fmtN(a.amount)} delta={delta} />
+                <StatCard
+                  key={a.mint}
+                  title={symbol}
+                  value={fmtN(a.amount)}
+                  sub={usdValue != null ? fmtUsd(usdValue) : undefined}
+                  delta={delta}
+                  deltaLabel={deltaRange}
+                />
               );
             })}
           </div>
@@ -311,7 +340,7 @@ export default function PoolDashboard({ defaultPool = "" }: Props) {
               emptyMessage="No assets"
             />
             <p className="text-xs text-[#6e7681] mt-2">
-              Click any token address to add a label. Vault links open on Solscan.
+              Click any token address to add a custom label. Vault links open on Solscan.
             </p>
           </section>
         </>
