@@ -8,7 +8,6 @@ const DATA_DIR =
     : path.join(process.cwd(), "data");
 
 const FILES = [
-  { key: "pool-history", file: "pool-history.json" },
   { key: "snapshots", file: "snapshots.json" },
   { key: "holders-history", file: "holders-history.json" },
   { key: "positions-history", file: "positions-history.json" },

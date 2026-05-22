@@ -56,6 +56,10 @@ export default function AdminPage() {
   const [backend, setBackend] = useState<BackendData | null>(null);
   const [backendLoading, setBackendLoading] = useState(true);
 
+  // Per-pool preview/download state
+  const [poolPreview, setPoolPreview] = useState<Record<string, unknown[] | null>>({});
+  const [poolPreviewLoading, setPoolPreviewLoading] = useState<Record<string, boolean>>({});
+
   async function load() {
     setLoading(true);
     setError(null);
@@ -78,6 +82,31 @@ export default function AdminPage() {
     } finally {
       setBackendLoading(false);
     }
+  }
+
+  async function fetchSnapshots(address: string, all = false): Promise<unknown[] | null> {
+    const from = all ? "0" : String(Date.now() - 24 * 60 * 60 * 1000);
+    const res = await fetch(`/api/pool-snapshots?address=${encodeURIComponent(address)}&from=${from}`);
+    if (!res.ok) return null;
+    return res.json();
+  }
+
+  async function handlePoolPreview(address: string) {
+    if (poolPreview[address] !== undefined) {
+      // toggle off
+      setPoolPreview((p) => { const n = { ...p }; delete n[address]; return n; });
+      return;
+    }
+    setPoolPreviewLoading((p) => ({ ...p, [address]: true }));
+    const snaps = await fetchSnapshots(address, false);
+    setPoolPreview((p) => ({ ...p, [address]: snaps }));
+    setPoolPreviewLoading((p) => ({ ...p, [address]: false }));
+  }
+
+  async function handlePoolDownload(address: string) {
+    const snaps = await fetchSnapshots(address, true);
+    if (!snaps) return;
+    downloadJson(`pool-snapshots-${address.slice(0, 8)}`, snaps);
   }
 
   useEffect(() => {
@@ -124,37 +153,78 @@ export default function AdminPage() {
           ) : (
             <div className="space-y-2">
               {backend.pools.map((pool) => (
-                <div key={pool.address} className="border border-[#30363d] rounded-lg px-4 py-3 bg-[#161b22]">
-                  <div className="flex items-center justify-between">
+                <div key={pool.address} className="border border-[#30363d] rounded-lg overflow-hidden bg-[#161b22]">
+                  <div className="flex items-center justify-between px-4 py-3">
                     <div>
                       <span className="font-mono text-sm text-[#e6edf3]">{shortAddr(pool.address)}</span>
                       <span className="ml-3 text-xs text-[#6e7681]">
                         Added {new Date(pool.addedAt).toLocaleDateString()}
                       </span>
-                    </div>
-                    {pool.latest ? (
-                      <div className="text-right">
-                        <div className="text-xs text-[#3fb950]">
-                          {pool.latest.assets.length} assets
-                          {pool.snapshotCount !== null && (
-                            <span className="ml-1.5 text-[#58a6ff] font-semibold">
-                              · {pool.snapshotCount.toLocaleString()} snapshots (24h)
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-xs text-[#6e7681] mt-0.5">
-                          last: {new Date(pool.latest.timestamp).toLocaleTimeString()}
-                        </div>
-                        <div className="text-xs text-[#6e7681] mt-0.5">
+                      {pool.latest && (
+                        <div className="mt-1 text-xs text-[#6e7681]">
                           {pool.latest.assets.map((a) =>
                             `${a.symbol ?? a.mint.slice(0, 4)}: ${a.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
                           ).join(" · ")}
                         </div>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-[#6e7681]">No snapshots yet</span>
-                    )}
+                      )}
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      {pool.latest ? (
+                        <div className="text-right">
+                          <div className="text-xs text-[#3fb950]">
+                            {pool.latest.assets.length} assets
+                            {pool.snapshotCount !== null && (
+                              <span className="ml-1.5 text-[#58a6ff] font-semibold">
+                                · {pool.snapshotCount.toLocaleString()} snapshots (24h)
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-[#6e7681]">
+                            last: {new Date(pool.latest.timestamp).toLocaleTimeString()}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-[#6e7681]">No snapshots yet</span>
+                      )}
+                      {pool.latest && (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handlePoolDownload(pool.address)}
+                            className="px-3 py-1 text-xs bg-[#21262d] border border-[#30363d] text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#30363d] rounded transition-colors"
+                          >
+                            Download All
+                          </button>
+                          <button
+                            onClick={() => handlePoolPreview(pool.address)}
+                            disabled={poolPreviewLoading[pool.address]}
+                            className="px-3 py-1 text-xs bg-[#21262d] border border-[#30363d] text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#30363d] rounded transition-colors disabled:opacity-50"
+                          >
+                            {poolPreviewLoading[pool.address]
+                              ? "Loading…"
+                              : poolPreview[pool.address] !== undefined
+                              ? "Collapse"
+                              : "Preview 24h"}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
+
+                  {poolPreview[pool.address] && (
+                    <div className="border-t border-[#30363d] bg-[#0d1117] p-4 overflow-auto max-h-[400px]">
+                      <div className="text-xs text-[#6e7681] mb-2">
+                        {poolPreview[pool.address]!.length} snapshots · newest first
+                      </div>
+                      <pre className="text-xs text-[#e6edf3] font-mono whitespace-pre-wrap">
+                        {JSON.stringify([...(poolPreview[pool.address] ?? [])].reverse().slice(0, 20), null, 2)}
+                      </pre>
+                      {poolPreview[pool.address]!.length > 20 && (
+                        <div className="text-xs text-[#6e7681] mt-2">
+                          … {poolPreview[pool.address]!.length - 20} more. Use Download All to get the full dataset.
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
