@@ -14,9 +14,10 @@ type AdminData = Record<string, FileEntry>;
 type PoolEntry = {
   address: string;
   addedAt: string;
+  snapshotCount: number | null;
   latest: {
     timestamp: number;
-    assets: { vault: string; mint: string; amount: number }[];
+    assets: { vault: string; mint: string; amount: number; symbol?: string }[];
   } | null;
 };
 
@@ -134,10 +135,20 @@ export default function AdminPage() {
                     {pool.latest ? (
                       <div className="text-right">
                         <div className="text-xs text-[#3fb950]">
-                          {pool.latest.assets.length} assets · last snapshot {new Date(pool.latest.timestamp).toLocaleTimeString()}
+                          {pool.latest.assets.length} assets
+                          {pool.snapshotCount !== null && (
+                            <span className="ml-1.5 text-[#58a6ff] font-semibold">
+                              · {pool.snapshotCount.toLocaleString()} snapshots (24h)
+                            </span>
+                          )}
                         </div>
                         <div className="text-xs text-[#6e7681] mt-0.5">
-                          {pool.latest.assets.map((a) => `${a.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`).join(" / ")}
+                          last: {new Date(pool.latest.timestamp).toLocaleTimeString()}
+                        </div>
+                        <div className="text-xs text-[#6e7681] mt-0.5">
+                          {pool.latest.assets.map((a) =>
+                            `${a.symbol ?? a.mint.slice(0, 4)}: ${a.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+                          ).join(" · ")}
                         </div>
                       </div>
                     ) : (
@@ -156,7 +167,10 @@ export default function AdminPage() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold text-[#e6edf3]">Local Data Store</h2>
-            <p className="text-xs text-[#6e7681] mt-0.5">Raw contents of the server-side JSON files</p>
+            <p className="text-xs text-[#6e7681] mt-0.5">
+              Ephemeral cache on this serverless instance — resets on every cold start.
+              Pool time-series history lives in MongoDB (shown above).
+            </p>
           </div>
           <button
             onClick={load}

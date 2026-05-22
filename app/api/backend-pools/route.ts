@@ -11,17 +11,19 @@ export async function GET() {
     if (!res.ok) throw new Error(`Backend returned ${res.status}`);
     const pools = await res.json();
 
-    // For each pool, also fetch its latest snapshot
+    // For each pool, fetch its latest snapshot and 24h snapshot count
     const withSnapshots = await Promise.all(
       pools.map(async (pool: { address: string; addedAt: string }) => {
         try {
-          const snapRes = await fetch(`${backendUrl}/api/snapshots/${pool.address}/latest`, {
-            next: { revalidate: 0 },
-          });
+          const [snapRes, countRes] = await Promise.all([
+            fetch(`${backendUrl}/api/snapshots/${pool.address}/latest`, { next: { revalidate: 0 } }),
+            fetch(`${backendUrl}/api/snapshots/${pool.address}/count`, { next: { revalidate: 0 } }),
+          ]);
           const latest = snapRes.ok ? await snapRes.json() : null;
-          return { ...pool, latest };
+          const countData = countRes.ok ? await countRes.json() : null;
+          return { ...pool, latest, snapshotCount: countData?.count ?? null };
         } catch {
-          return { ...pool, latest: null };
+          return { ...pool, latest: null, snapshotCount: null };
         }
       })
     );
