@@ -43,9 +43,10 @@ function buildDeltaMap(assets: PoolSnapshot["assets"], ref: RefSnap): Map<string
 
 interface Props {
   defaultPool?: string;
+  locked?: boolean;
 }
 
-export default function PoolDashboard({ defaultPool = "" }: Props) {
+export default function PoolDashboard({ defaultPool = "", locked = false }: Props) {
   const [input, setInput] = useState(defaultPool);
   const [activePool, setActivePool] = useState("");
   const [snapshot, setSnapshot] = useState<PoolSnapshot | null>(null);
@@ -135,6 +136,10 @@ export default function PoolDashboard({ defaultPool = "" }: Props) {
     delta30d: buildDeltaMap(snapshot!.assets, snap30d).get(a.mint) ?? null,
   }));
 
+  // Stabble uses a shared vault — all rows reference the pool account itself.
+  // Hide the Vault column when every row has the same vault address to avoid repetition.
+  const showVaultCol = rows.length > 0 && !rows.every((r) => r.vault === rows[0].vault);
+
   const columns: Column<AssetRow>[] = [
     {
       key: "symbol",
@@ -147,21 +152,22 @@ export default function PoolDashboard({ defaultPool = "" }: Props) {
         </div>
       ),
     },
-    {
-      key: "vault",
+    ...(showVaultCol ? [{
+      key: "vault" as const,
       header: "Vault",
       sortable: false,
-      render: (row) => (
-        <a
-          href={`https://solscan.io/account/${row.vault}`}
-          target="_blank"
-          rel="noreferrer"
-          className="font-mono text-xs text-[#8b949e] hover:text-[#58a6ff] transition-colors"
+      render: (row: AssetRow) => (
+        <button
+          onClick={() => window.open(`https://solscan.io/account/${row.vault}`, "_blank", "noopener,noreferrer")}
+          className="font-mono text-xs text-[#8b949e] hover:text-[#58a6ff] transition-colors flex items-center gap-1"
         >
-          {shortAddr(row.vault)} ↗
-        </a>
+          {shortAddr(row.vault)}
+          <svg viewBox="0 0 16 16" className="w-3 h-3" fill="currentColor">
+            <path d="M3.75 2h3.5a.75.75 0 0 1 0 1.5h-3.5a.25.25 0 0 0-.25.25v8.5c0 .138.112.25.25.25h8.5a.25.25 0 0 0 .25-.25v-3.5a.75.75 0 0 1 1.5 0v3.5A1.75 1.75 0 0 1 12.25 14h-8.5A1.75 1.75 0 0 1 2 12.25v-8.5C2 2.784 2.784 2 3.75 2Zm6.854-1h4.146a.25.25 0 0 1 .25.25v4.146a.25.25 0 0 1-.427.177L13.03 4.03 9.28 7.78a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042l3.75-3.75-1.543-1.543A.25.25 0 0 1 10.604 1Z" />
+          </svg>
+        </button>
       ),
-    },
+    } as Column<AssetRow>] : []),
     {
       key: "amount",
       header: "Amount",
@@ -217,14 +223,12 @@ export default function PoolDashboard({ defaultPool = "" }: Props) {
           <h1 className="text-2xl font-bold text-[#e6edf3]">Pool Tracker</h1>
           {activePool && (
             <div className="flex items-center gap-2 mt-0.5">
-              <a
-                href={`https://solscan.io/account/${activePool}`}
-                target="_blank"
-                rel="noreferrer"
+              <button
+                onClick={() => window.open(`https://solscan.io/account/${activePool}`, "_blank", "noopener,noreferrer")}
                 className="text-xs text-[#58a6ff] hover:underline font-mono"
               >
                 {shortAddr(activePool)} ↗
-              </a>
+              </button>
               {lastUpdated && (
                 <span className="text-xs text-[#6e7681]">· Last updated: {lastUpdated.toLocaleTimeString()}</span>
               )}
@@ -248,18 +252,26 @@ export default function PoolDashboard({ defaultPool = "" }: Props) {
         <input
           type="text"
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => !locked && setInput(e.target.value)}
+          readOnly={locked}
           placeholder="Paste a Stabble pool address…"
-          className="flex-1 bg-[#161b22] border border-[#30363d] rounded-lg px-4 py-2.5 text-sm text-[#e6edf3] placeholder-[#6e7681] font-mono outline-none focus:border-[#58a6ff] transition-colors"
+          className={[
+            "flex-1 border rounded-lg px-4 py-2.5 text-sm font-mono outline-none transition-colors",
+            locked
+              ? "bg-[#0d1117] border-[#21262d] text-[#6e7681] cursor-not-allowed select-none"
+              : "bg-[#161b22] border-[#30363d] text-[#e6edf3] placeholder-[#6e7681] focus:border-[#58a6ff]",
+          ].join(" ")}
         />
-        <button
-          type="submit"
-          disabled={loading || !input.trim()}
-          className="px-5 py-2.5 bg-[#238636] text-white rounded-lg text-sm hover:bg-[#2ea043] transition-colors disabled:opacity-50 flex items-center gap-2 whitespace-nowrap"
-        >
-          {loading && <span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin inline-block" />}
-          {loading ? (discovering ? "Discovering vaults…" : "Loading…") : "Search"}
-        </button>
+        {!locked && (
+          <button
+            type="submit"
+            disabled={loading || !input.trim()}
+            className="px-5 py-2.5 bg-[#238636] text-white rounded-lg text-sm hover:bg-[#2ea043] transition-colors disabled:opacity-50 flex items-center gap-2 whitespace-nowrap"
+          >
+            {loading && <span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin inline-block" />}
+            {loading ? "Loading…" : "Search"}
+          </button>
+        )}
       </form>
 
       {error && (
@@ -269,13 +281,8 @@ export default function PoolDashboard({ defaultPool = "" }: Props) {
       )}
 
       {!loading && !snapshot && !error && (
-        <div className="border border-[#30363d] rounded-lg p-8 text-center space-y-2">
-          <p className="text-[#8b949e] text-sm">
-            Enter any Stabble pool address above to see its asset composition and balances.
-          </p>
-          <p className="text-xs text-[#6e7681]">
-            Vault addresses are discovered automatically from on-chain transaction history — no manual setup needed.
-          </p>
+        <div className="border border-[#30363d] rounded-lg p-8 text-center">
+          <p className="text-[#8b949e] text-sm">Loading pool data…</p>
         </div>
       )}
 
@@ -340,7 +347,7 @@ export default function PoolDashboard({ defaultPool = "" }: Props) {
               emptyMessage="No assets"
             />
             <p className="text-xs text-[#6e7681] mt-2">
-              Click any token address to add a custom label. Vault links open on Solscan.
+              Hover any token address to copy, label, or view on Solscan.
             </p>
           </section>
         </>

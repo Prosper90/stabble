@@ -10,6 +10,16 @@ import type { PoolAsset, PoolSnapshot } from "@/lib/types";
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+const KNOWN_SYMBOLS: Record<string, string> = {
+  "27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4": "JLP",
+  "orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE":  "ORCA",
+  "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN":  "JUP",
+  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": "USDC",
+  "So11111111111111111111111111111111111111112":    "SOL",
+  "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB": "USDT",
+  "STBuyENwJ1GP4yNZCjwavn92wYLEY3t5S1kVS5kwyS1":  "STB",
+};
+
 async function fetchSymbols(mints: string[]): Promise<Record<string, string>> {
   const results: Record<string, string> = {};
   await Promise.all(
@@ -18,9 +28,10 @@ async function fetchSymbols(mints: string[]): Promise<Record<string, string>> {
         const res = await fetch(`https://tokens.jup.ag/token/${mint}`, { next: { revalidate: 3600 } });
         if (res.ok) {
           const data = await res.json();
-          if (data.symbol) results[mint] = data.symbol;
+          if (data.symbol) { results[mint] = data.symbol; return; }
         }
       } catch { /* skip */ }
+      if (KNOWN_SYMBOLS[mint]) results[mint] = KNOWN_SYMBOLS[mint];
     })
   );
   return results;

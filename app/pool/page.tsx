@@ -1,6 +1,7 @@
 import PoolDashboard from "@/components/PoolDashboard";
 
+const POOL_ADDRESS = "41GRMsYsBGmC67e37kcuCgTCmCRqN51dmCz4aQrzPLoP";
+
 export default function PoolPage() {
-  const defaultPool = process.env.POOL_ADDRESS ?? "";
-  return <PoolDashboard defaultPool={defaultPool} />;
+  return <PoolDashboard defaultPool={POOL_ADDRESS} locked />;
 }
