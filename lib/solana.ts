@@ -276,12 +276,85 @@ export async function fetchSnapshot(): Promise<Snapshot> {
   };
 }
 
+const TOKEN_2022_PROGRAM_ID = new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
+const TOKEN_PROGRAM_STR = TOKEN_PROGRAM_ID.toBase58();
+const TOKEN_2022_STR = TOKEN_2022_PROGRAM_ID.toBase58();
+
+function isSplTokenAccount(info: { owner: PublicKey; data: Buffer }): boolean {
+  const owner = info.owner.toBase58();
+  if (owner === TOKEN_PROGRAM_STR && info.data.length === 165) return true;
+  if (owner === TOKEN_2022_STR && info.data.length >= 165) return true;
+  return false;
+}
+
 async function discoverPoolVaults(connection: Connection, poolAddress: string): Promise<string[]> {
+  const poolPubkey = new PublicKey(poolAddress);
+
+  // Primary strategy: read pool account raw bytes, scan for SPL token accounts,
+  // identify the common vault authority, then fetch all its token accounts.
+  // This is exact — unlike transaction frequency, it cannot hit shared protocol accounts.
+  const poolInfo = await connection.getAccountInfo(poolPubkey).catch(() => null);
+  if (poolInfo && poolInfo.data.length >= 72) {
+    const data = Buffer.from(poolInfo.data);
+    const zeroBuf = Buffer.alloc(32);
+    const candidates: PublicKey[] = [];
+
+    // Stride-1 scan after 8-byte Anchor discriminator — catches pubkeys at any alignment
+    for (let i = 8; i + 32 <= data.length; i++) {
+      const slice = data.subarray(i, i + 32);
+      if (slice.equals(zeroBuf)) { i += 31; continue; }
+      try { candidates.push(new PublicKey(slice)); } catch { /* skip */ }
+    }
+
+    if (candidates.length > 0) {
+      const BATCH = 100;
+      const authorityVaults = new Map<string, Set<string>>();
+
+      for (let bi = 0; bi < candidates.length; bi += BATCH) {
+        const batch = candidates.slice(bi, bi + BATCH);
+        const infos = await connection.getMultipleAccountsInfo(batch).catch(() => null);
+        if (!infos) continue;
+        for (let j = 0; j < infos.length; j++) {
+          const info = infos[j];
+          if (!info || !isSplTokenAccount(info)) continue;
+          // Token account layout: mint(32 bytes) | owner/authority(32 bytes) | ...
+          const authority = new PublicKey(info.data.subarray(32, 64)).toBase58();
+          const vaultAddr = candidates[bi + j].toBase58();
+          if (!authorityVaults.has(authority)) authorityVaults.set(authority, new Set());
+          authorityVaults.get(authority)!.add(vaultAddr);
+        }
+      }
+
+      // Vault authority is the one that owns the most token accounts
+      let bestAuth = "";
+      let bestCount = 0;
+      for (const [auth, vaults] of authorityVaults) {
+        if (vaults.size > bestCount) { bestCount = vaults.size; bestAuth = auth; }
+      }
+
+      if (bestCount >= 2) {
+        // Use getTokenAccountsByOwner to get the complete list (pool account scan may
+        // not contain every vault address if some are stored in nested structures)
+        const resp = await connection.getTokenAccountsByOwner(
+          new PublicKey(bestAuth),
+          { programId: TOKEN_PROGRAM_ID }
+        ).catch(() => null);
+        if (resp && resp.value.length >= 2) {
+          return resp.value.map(({ pubkey }) => pubkey.toBase58());
+        }
+        return [...authorityVaults.get(bestAuth)!];
+      }
+    }
+  }
+
+  // Fallback: transaction frequency analysis (works when pool account parsing finds nothing)
+  return discoverVaultsFromTransactions(connection, poolAddress);
+}
+
+async function discoverVaultsFromTransactions(connection: Connection, poolAddress: string): Promise<string[]> {
   const sigs = await connection.getSignaturesForAddress(new PublicKey(poolAddress), { limit: 10 });
   if (sigs.length === 0) return [];
 
-  // Count how many transactions each token account appears in (deduplicated per tx).
-  // Pool vaults appear in every swap; user wallets appear in only 1-2 transactions.
   const txFreq = new Map<string, number>();
   const toProcess = sigs.slice(0, 8);
 
@@ -309,8 +382,6 @@ async function discoverPoolVaults(connection: Connection, poolAddress: string): 
     }
   }
 
-  // Require account to appear in at least 60% of processed transactions.
-  // This excludes user wallets (sporadic) while keeping pool vaults (present in all swaps).
   const threshold = Math.max(2, Math.ceil(toProcess.length * 0.6));
   return [...txFreq.entries()]
     .filter(([, count]) => count >= threshold)
