@@ -276,79 +276,33 @@ export async function fetchSnapshot(): Promise<Snapshot> {
   };
 }
 
-const TOKEN_2022_PROGRAM_ID = new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
-const TOKEN_PROGRAM_STR = TOKEN_PROGRAM_ID.toBase58();
-const TOKEN_2022_STR = TOKEN_2022_PROGRAM_ID.toBase58();
+const STABBLE_AMM_PROGRAM_ID = "swapFpHZwjELNnjvThjajtiVmkz3yPQEHjLtka2fwHW";
 
-function isSplTokenAccount(info: { owner: PublicKey; data: Buffer }): boolean {
-  const owner = info.owner.toBase58();
-  if (owner === TOKEN_PROGRAM_STR && info.data.length === 165) return true;
-  if (owner === TOKEN_2022_STR && info.data.length >= 165) return true;
-  return false;
-}
+// Stabble uses a shared vault (Balancer v2-style) — per-pool balances live in the
+// pool account state, NOT in SPL vault balances.
+// Layout confirmed by inspection: token entries start at byte 126, stride 58.
+// Within each entry: mint at [+0], amount at [+42] (u64 LE, normalized 9-decimal).
+function parseStabblePoolAssets(poolAddress: string, data: Buffer): PoolAsset[] {
+  const FIRST_MINT = 126;
+  const STRIDE = 58;
+  const AMT_OFF = 42;
+  const SCALE = 1e9;
 
-async function discoverPoolVaults(connection: Connection, poolAddress: string): Promise<string[]> {
-  const poolPubkey = new PublicKey(poolAddress);
+  const zeroBuf = Buffer.alloc(32);
+  const assets: PoolAsset[] = [];
+  let offset = FIRST_MINT;
 
-  // Primary strategy: read pool account raw bytes, scan for SPL token accounts,
-  // identify the common vault authority, then fetch all its token accounts.
-  // This is exact — unlike transaction frequency, it cannot hit shared protocol accounts.
-  const poolInfo = await connection.getAccountInfo(poolPubkey).catch(() => null);
-  if (poolInfo && poolInfo.data.length >= 72) {
-    const data = Buffer.from(poolInfo.data);
-    const zeroBuf = Buffer.alloc(32);
-    const candidates: PublicKey[] = [];
-
-    // Stride-1 scan after 8-byte Anchor discriminator — catches pubkeys at any alignment
-    for (let i = 8; i + 32 <= data.length; i++) {
-      const slice = data.subarray(i, i + 32);
-      if (slice.equals(zeroBuf)) { i += 31; continue; }
-      try { candidates.push(new PublicKey(slice)); } catch { /* skip */ }
-    }
-
-    if (candidates.length > 0) {
-      const BATCH = 100;
-      const authorityVaults = new Map<string, Set<string>>();
-
-      for (let bi = 0; bi < candidates.length; bi += BATCH) {
-        const batch = candidates.slice(bi, bi + BATCH);
-        const infos = await connection.getMultipleAccountsInfo(batch).catch(() => null);
-        if (!infos) continue;
-        for (let j = 0; j < infos.length; j++) {
-          const info = infos[j];
-          if (!info || !isSplTokenAccount(info)) continue;
-          // Token account layout: mint(32 bytes) | owner/authority(32 bytes) | ...
-          const authority = new PublicKey(info.data.subarray(32, 64)).toBase58();
-          const vaultAddr = candidates[bi + j].toBase58();
-          if (!authorityVaults.has(authority)) authorityVaults.set(authority, new Set());
-          authorityVaults.get(authority)!.add(vaultAddr);
-        }
-      }
-
-      // Vault authority is the one that owns the most token accounts
-      let bestAuth = "";
-      let bestCount = 0;
-      for (const [auth, vaults] of authorityVaults) {
-        if (vaults.size > bestCount) { bestCount = vaults.size; bestAuth = auth; }
-      }
-
-      if (bestCount >= 2) {
-        // Use getTokenAccountsByOwner to get the complete list (pool account scan may
-        // not contain every vault address if some are stored in nested structures)
-        const resp = await connection.getTokenAccountsByOwner(
-          new PublicKey(bestAuth),
-          { programId: TOKEN_PROGRAM_ID }
-        ).catch(() => null);
-        if (resp && resp.value.length >= 2) {
-          return resp.value.map(({ pubkey }) => pubkey.toBase58());
-        }
-        return [...authorityVaults.get(bestAuth)!];
-      }
-    }
+  while (offset + STRIDE <= data.length) {
+    const mintBytes = data.subarray(offset, offset + 32);
+    if (mintBytes.equals(zeroBuf)) break;
+    let mint: string;
+    try { mint = new PublicKey(mintBytes).toBase58(); } catch { break; }
+    const rawAmount = data.readBigUInt64LE(offset + AMT_OFF);
+    assets.push({ vault: poolAddress, mint, amount: Number(rawAmount) / SCALE, decimals: 9 });
+    offset += STRIDE;
   }
 
-  // Fallback: transaction frequency analysis (works when pool account parsing finds nothing)
-  return discoverVaultsFromTransactions(connection, poolAddress);
+  return assets;
 }
 
 async function discoverVaultsFromTransactions(connection: Connection, poolAddress: string): Promise<string[]> {
@@ -394,7 +348,16 @@ export async function fetchPool(poolAddress?: string): Promise<PoolSnapshot> {
 
   const connection = new Connection(RPC_URL, "confirmed");
 
-  const vaultAddresses = await discoverPoolVaults(connection, addr);
+  const poolInfo = await connection.getAccountInfo(new PublicKey(addr)).catch(() => null);
+
+  // Stabble AMM: read per-pool balances directly from pool account state
+  if (poolInfo?.owner.toBase58() === STABBLE_AMM_PROGRAM_ID) {
+    const assets = parseStabblePoolAssets(addr, Buffer.from(poolInfo.data));
+    return { timestamp: Date.now(), poolAddress: addr, assets };
+  }
+
+  // Other AMMs: discover vaults via transaction analysis
+  const vaultAddresses = await discoverVaultsFromTransactions(connection, addr);
   if (vaultAddresses.length === 0) {
     return { timestamp: Date.now(), poolAddress: addr, assets: [] };
   }
