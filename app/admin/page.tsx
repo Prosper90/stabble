@@ -60,6 +60,11 @@ export default function AdminPage() {
   const [poolPreview, setPoolPreview] = useState<Record<string, unknown[] | null>>({});
   const [poolPreviewLoading, setPoolPreviewLoading] = useState<Record<string, boolean>>({});
 
+  // Add-pool form
+  const [newPool, setNewPool] = useState("");
+  const [addingPool, setAddingPool] = useState(false);
+  const [addPoolMsg, setAddPoolMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
   async function load() {
     setLoading(true);
     setError(null);
@@ -103,6 +108,30 @@ export default function AdminPage() {
     setPoolPreviewLoading((p) => ({ ...p, [address]: false }));
   }
 
+  async function handleAddPool(e: React.FormEvent) {
+    e.preventDefault();
+    const addr = newPool.trim();
+    if (!addr) return;
+    setAddingPool(true);
+    setAddPoolMsg(null);
+    try {
+      const res = await fetch("/api/backend-pools", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: addr }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Unknown error");
+      setAddPoolMsg({ ok: true, text: `Pool registered. Cron will start tracking it within 1 minute.` });
+      setNewPool("");
+      loadBackend();
+    } catch (e) {
+      setAddPoolMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setAddingPool(false);
+    }
+  }
+
   async function handlePoolDownload(address: string) {
     const snaps = await fetchSnapshots(address, true);
     if (!snaps) return;
@@ -136,6 +165,32 @@ export default function AdminPage() {
         {!backendLoading && backend && !backend.configured && (
           <div className="border border-[#30363d] rounded-lg px-4 py-6 text-center text-[#6e7681] text-sm">
             Backend not configured — set <span className="font-mono text-[#8b949e]">BACKEND_URL</span> in Netlify env vars once the server is deployed.
+          </div>
+        )}
+
+        {/* Add new pool */}
+        {!backendLoading && backend?.configured && (
+          <form onSubmit={handleAddPool} className="flex gap-2">
+            <input
+              type="text"
+              value={newPool}
+              onChange={(e) => setNewPool(e.target.value)}
+              placeholder="Paste a Stabble pool address to start tracking…"
+              className="flex-1 bg-[#161b22] border border-[#30363d] rounded-lg px-4 py-2.5 text-sm text-[#e6edf3] placeholder-[#6e7681] font-mono outline-none focus:border-[#58a6ff] transition-colors"
+            />
+            <button
+              type="submit"
+              disabled={addingPool || !newPool.trim()}
+              className="px-5 py-2.5 bg-[#1f6feb] text-white rounded-lg text-sm hover:bg-[#388bfd] transition-colors disabled:opacity-50 whitespace-nowrap flex items-center gap-2"
+            >
+              {addingPool && <span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin inline-block" />}
+              {addingPool ? "Registering…" : "Track Pool"}
+            </button>
+          </form>
+        )}
+        {addPoolMsg && (
+          <div className={`rounded-lg px-4 py-3 text-sm ${addPoolMsg.ok ? "bg-[#1a3a1a] border border-[#3fb950] text-[#3fb950]" : "bg-[#5a1e1e] border border-[#f85149] text-[#ffa198]"}`}>
+            {addPoolMsg.text}
           </div>
         )}
 

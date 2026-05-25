@@ -1,4 +1,31 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+
+// Register a new pool for cron tracking
+export async function POST(req: NextRequest) {
+  const backendUrl = process.env.BACKEND_URL;
+  if (!backendUrl) return NextResponse.json({ error: "Backend not configured" }, { status: 503 });
+
+  let address: string;
+  try {
+    const body = await req.json();
+    address = (body.address ?? "").trim();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  if (!address) return NextResponse.json({ error: "address required" }, { status: 400 });
+
+  try {
+    const res = await fetch(`${backendUrl}/api/pools/${encodeURIComponent(address)}`, {
+      method: "POST",
+      next: { revalidate: 0 },
+    });
+    if (!res.ok) throw new Error(`Backend returned ${res.status}`);
+    return NextResponse.json({ ok: true, address });
+  } catch (e) {
+    return NextResponse.json({ error: String(e) }, { status: 500 });
+  }
+}
 
 export async function GET() {
   const backendUrl = process.env.BACKEND_URL;
